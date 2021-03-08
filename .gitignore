@@ -1,0 +1,10 @@
+# ENV files
+.env
+
+# Directories
+blackhole
+config
+downloads
+movies
+tvshows
+

@@ -1,0 +1,210 @@
+version: '2.1'
+services:
+
+  portainer:
+    image: portainer/portainer
+    container_name: portainer
+    restart: unless-stopped
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${USERDIR}/config/portainer/data:/data
+      - ${USERDIR}/config/shared:/shared 
+    environment:
+      - TZ=${TZ}
+
+  watchtower:
+    container_name: watchtower
+    restart: unless-stopped
+    image: v2tec/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 86400 --cleanup
+
+#  https://haugene.github.io/docker-transmission-openvpn/supported-providers/#using_a_custom_provider
+  transmission-vpn:
+    container_name: transmission-vpn
+    image: haugene/transmission-openvpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    restart: unless-stopped
+    ports:
+      - 9091:9091 #TRANSMISSION
+      - 9117:9117 #JACKETT
+      # - 7878:7878 #RADARR
+      # - 8989:8989 #SONARR
+      # - 6767:6767 #BAZARR
+      # - 8686:8686 #LIDARR
+      # - 5299:5299 #LAZYLIBRARIAN
+      # - 32400:32400 #PLEX
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/config/transmission-vpn/default.ovpn:/etc/openvpn/custom/default.ovpn
+      - ${USERDIR}/config/transmission-vpn:/data/transmission-home 
+      - ${USERDIR}/config/shared:/shared
+      - ${USERDIR}/downloads:/data/completed
+      - ${USERDIR}/blackhole:/data/watch
+    environment:
+      - OPENVPN_PROVIDER=${OVPN_PROVIDER}
+      - OPENVPN_USERNAME=${OVPN_USER}
+      - OPENVPN_PASSWORD=${OVPN_PASS}
+      - OPENVPN_OPTS=--inactive 3600 --ping 10 --ping-exit 60
+      - LOCAL_NETWORK=192.168.0.0/24
+      - WEBPROXY_ENABLED=false
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - TRANSMISSION_WEB_UI=combustion
+      - TRANSMISSION_RPC_AUTHENTICATION_REQUIRED=true
+      - TRANSMISSION_RPC_HOST_WHITELIST="192.168.*.*,127.0.0.1"
+      - TRANSMISSION_RPC_PASSWORD=${TRANSMISSION_PASS}
+      - TRANSMISSION_RPC_USERNAME=${TRANSMISSION_USER}
+      - TRANSMISSION_UMASK=2
+      - TRANSMISSION_RATIO_LIMIT=0
+      - TRANSMISSION_RATIO_LIMIT_ENABLED=true
+      - TRANSMISSION_SCRAPE_PAUSED_TORRENTS_ENABLED=false
+    logging:
+        driver: json-file
+        options:
+            max-size: 10m
+
+  jackett:
+    image: linuxserver/jackett
+    container_name: jackett
+    network_mode: "service:transmission-vpn"
+    environment:
+        - PUID=${PUID}
+        - PGID=${PGID}
+        - TZ=${TZ}
+        - AUTO_UPDATE=true
+    volumes:
+      - ${USERDIR}/config/jackett:/config
+      - ${USERDIR}/downloads:/downloads
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/config/shared:/shared 
+    restart: unless-stopped
+
+  radarr:
+    image: linuxserver/radarr
+    # network_mode: "service:transmission-vpn"
+    container_name: radarr
+    environment:
+        - PUID=${PUID}
+        - PGID=${PGID}
+        - TZ=${TZ}
+        - UMASK_SET=022
+    ports:
+        - 7878:7878
+    volumes:
+      - ${USERDIR}/config/radarr:/config
+      - ${USERDIR}/downloads:/downloads
+      - ${USERDIR}/movies:/movies
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/config/shared:/shared 
+    restart: unless-stopped
+
+  sonarr:
+    image: linuxserver/sonarr
+    # network_mode: "service:transmission-vpn"
+    container_name: sonarr
+    environment:
+        - PUID=${PUID}
+        - PGID=${PGID}
+        - TZ=${TZ}
+        - UMASK_SET=022
+    ports:
+        - 8989:8989
+    volumes:
+      - ${USERDIR}/config/sonarr:/config
+      - ${USERDIR}/downloads:/downloads
+      - ${USERDIR}/tvshows:/tv
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/config/shared:/shared 
+    restart: unless-stopped
+  
+  bazarr:
+    image: linuxserver/bazarr
+    # network_mode: "service:transmission-vpn"
+    container_name: bazarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK_SET=022
+    ports:
+      - 6767:6767
+    volumes:
+      - ${USERDIR}/config/bazarr:/config
+      - ${USERDIR}/movies:/movies
+      - ${USERDIR}/tvshows:/tv
+      - ${USERDIR}/config/shared:/shared 
+    restart: unless-stopped
+
+  plex:
+    image: linuxserver/plex
+    network_mode: host
+    container_name: plex
+    environment:
+        - PUID=${PUID}
+        - PGID=${PGID}
+        - UMASK_SET=022
+        - VERSION=docker
+    volumes:
+      - ${USERDIR}/config/plex:/config
+      - ${USERDIR}/tvshows:/tv
+      - ${USERDIR}/movies:/movies
+      - /etc/timezone:/etc/timezone:ro
+    ports:
+      - 32400:32400
+    restart: unless-stopped
+
+  ombi:
+    image: linuxserver/ombi
+    container_name: ombi
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      # - BASE_URL=/ombi
+    volumes:
+      - ${USERDIR}/config/ombi:/config
+    ports:
+      - 3579:3579
+    restart: unless-stopped
+
+# lidarr:
+#    image: linuxserver/lidarr
+#    network_mode: "service:transmission-vpn"
+#    container_name: lidarr
+#    environment:
+#        - PUID=${PUID}
+#        - PGID=${PGID}
+#        - TZ=${TZ}
+#        - UMASK_SET=022
+#    volumes:
+#        - /home/appdata/lidarr:/config
+#        - /home/media/music:/music
+#        - /home/downloads/completed:/downloads
+#    restart: unless-stopped
+
+#  lazylibrarian:
+#     image: linuxserver/lazylibrarian
+#     network_mode: "service:transmission-vpn"
+#     container_name: lazylibrarian
+#     environment:
+#         - PUID=${PUID}
+#         - PGID=${PGID}
+#         - TZ=${TZ}
+#         #- DOCKER_MODS=linuxserver/calibre-web:calibre #optional
+#     volumes:
+#         - /srv/dev-disk-by-label-data/appdata/lazylibrarian:/config
+#         - /srv/dev-disk-by-label-data/downloads/completed:/downloads
+#         - /srv/dev-disk-by-label-data/media/ebooks:/books
+#     restart: unless-stopped
